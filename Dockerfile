@@ -8,6 +8,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 
 # Install OS libs (robust names + no-install-recommends)
+# non-interactive for apt and minimal libs
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       build-essential \
@@ -16,6 +18,7 @@ RUN apt-get update && \
       libgl1 \
       libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
+
 
 # Copy requirements first for Docker cache (if you use requirements.txt)
 COPY requirements.txt /app/requirements.txt
