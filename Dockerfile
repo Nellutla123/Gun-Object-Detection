@@ -1,56 +1,42 @@
-# Use Python 3.11 slim as base image
+# Dockerfile (patched - robust apt + single pip layer)
 FROM python:3.11-slim
 
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies for PyTorch and image processing
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    build-essential \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements first for better caching
-COPY requirements.txt .
-
-# Upgrade pip first
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
-
-# Install PyTorch and torchvision from PyTorch index (CPU version - smaller and faster for CI/CD)
-# This prevents downloading the full CUDA version which is much larger and can cause timeouts
-RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
-
-# Install other dependencies (exclude torch and torchvision as they're already installed)
-RUN pip install --no-cache-dir \
-    pandas \
-    numpy \
-    setuptools \
-    kagglehub \
-    opencv-python-headless \
-    tensorboard \
-    dvc \
-    "fastapi[all]" \
-    uvicorn \
-    pillow
-
-# Copy application code
-COPY . .
-
-# Expose the port FastAPI will run on
-EXPOSE 8000
-
-# Set environment variables
+# non-interactive for apt
+ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+WORKDIR /app
 
-# Health check
+# Install OS libs (robust names + no-install-recommends)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      build-essential \
+      ca-certificates \
+      curl \
+      libgl1 \
+      libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for Docker cache (if you use requirements.txt)
+COPY requirements.txt /app/requirements.txt
+
+# Upgrade pip
+RUN pip install --upgrade pip setuptools wheel
+
+# Install torch + torchvision (CPU wheels) and other python deps in one layer.
+# Adjust index-url or package list as needed.
+RUN pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu \
+    "torch" "torchvision" && \
+    pip install --no-cache-dir -r /app/requirements.txt
+
+# Copy the rest of the app
+COPY . /app
+
+EXPOSE 8000
+
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/ || exit 1
+  CMD curl -f http://localhost:8000/ || exit 1
 
-# Run the application
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 
