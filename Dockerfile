@@ -1,45 +1,61 @@
-# Dockerfile (patched - robust apt + single pip layer)
-FROM python:3.11-slim
+# Stage 1: Download and cache model weights
+FROM python:3.9-slim AS model-cache
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+RUN python -c "import torch; import torchvision; torchvision.models.detection.fasterrcnn_resnet50_fpn(weights='DEFAULT')"
 
-# non-interactive for apt
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
+# Stage 2: Final application image
+FROM python:3.9-slim
+
+# Set working directory
 WORKDIR /app
 
-# Install OS libs (robust names + no-install-recommends)
-# non-interactive for apt and minimal libs
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      build-essential \
-      ca-certificates \
-      curl \
-      libgl1 \
-      libglib2.0-0 \
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libglib2.0-0 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy requirements file
+COPY docker-requirements.txt .
 
-# Copy requirements first for Docker cache (if you use requirements.txt)
-COPY requirements.txt /app/requirements.txt
+# Install Python dependencies and clean up in same layer
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r docker-requirements.txt && \
+    pip cache purge
 
-# Upgrade pip
-RUN pip install --upgrade pip setuptools wheel
+# Copy cached models from previous stage
+COPY --from=model-cache /root/.cache/torch /root/.cache/torch
 
-# Install torch + torchvision (CPU wheels) and other python deps in one layer.
-# Adjust index-url or package list as needed.
-RUN pip install --no-cache-dir \
-    --index-url https://download.pytorch.org/whl/cpu \
-    "torch" "torchvision" && \
-    pip install --no-cache-dir -r /app/requirements.txt
+# Create necessary directories
+RUN mkdir -p src artifacts/models static
 
-# Copy the rest of the app
-COPY . /app
+# Copy specific source files
+COPY src/model_architecture.py src/
+COPY src/custom_exception.py src/
+COPY src/logger.py src/
+COPY src/data_processing.py src/
+COPY static/ static/
+COPY main.py .
+COPY run_server.py .
 
+# Copy the trained model
+COPY artifacts/models/ artifacts/models/
+
+# Create empty __init__.py files for Python modules
+RUN touch src/__init__.py
+
+# Expose port 8000 for FastAPI
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:8000/ || exit 1
+# Add health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/ || exit 1
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Command to run the application
+CMD ["python", "run_server.py"]
 
