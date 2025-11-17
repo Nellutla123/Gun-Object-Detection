@@ -1,100 +1,131 @@
-# main.py
+import base64
 import io
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import StreamingResponse
-from PIL import Image, ImageDraw, ImageFont
+from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 import torch
-from torchvision import transforms, models
+from torchvision import transforms
+from PIL import Image, ImageDraw, ImageFont
+from src.model_architecture import FasterRCNNModel
 
-# --- model & device ---
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
+
+# Initialize your custom model architecture
+model_instance = FasterRCNNModel(num_classes=2, device=device)
+model = model_instance.model
+
+# Load the trained weights from artifacts
+model_path = "artifacts/models/fasterrcnn.pth"
+model.load_state_dict(torch.load(model_path, map_location=device))
 model.to(device)
 model.eval()
 
-# --- transform: returns CxHxW tensor (no batch dim) ---
-transform = transforms.Compose([transforms.ToTensor()])
+transform = transforms.Compose([
+    transforms.ToTensor(),
+])
 
-app = FastAPI()
+GUN_LABEL_ID = 1  # dataset: 0 background, 1 gun
+LABEL_MAP = {
+    GUN_LABEL_ID: "Gun",
+}
 
+app = FastAPI(title="Guns Object Detection System", description="AI-powered weapon detection system")
 
-def predict_and_draw(image: Image.Image, score_threshold: float = 0.7):
-    """
-    Run detection on a PIL image and draw boxes for detections >= score_threshold.
-    Returns a PIL image with boxes drawn.
-    """
-    # ensure RGB
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+def predict_and_draw(image: Image.Image, score_threshold: float = 0.5):
+    image_tensor = transform(image).unsqueeze(0).to(device)
+    with torch.no_grad():
+        predictions = model(image_tensor)
+
+    prediction = predictions[0]
+    boxes = prediction.get("boxes", torch.empty((0, 4))).cpu().numpy()
+    labels = prediction.get("labels", torch.empty((0,), dtype=torch.int64)).cpu().numpy()
+    scores = prediction.get("scores", torch.empty((0,))).cpu().numpy()
+
     img_rgb = image.convert("RGB")
-
-    # prepare tensor (C,H,W) and move to device
-    img_tensor = transform(img_rgb).to(device)  # shape: C x H x W
-
-    # torchvision detection models expect a list of tensors
-    try:
-        with torch.no_grad():
-            outputs = model([img_tensor])  # returns list[dict]
-    except Exception as e:
-        # surface model inference errors clearly
-        raise RuntimeError(f"Model inference failed: {e}")
-
-    if not outputs or len(outputs) == 0:
-        # no outputs - return original image
-        return img_rgb
-
-    pred = outputs[0]  # correct variable (was typo in your code)
-
-    # get boxes/scores/labels safely
-    boxes = pred.get("boxes", torch.empty((0, 4))).cpu().numpy()
-    scores = pred.get("scores", torch.empty((0,))).cpu().numpy()
-    labels = pred.get("labels", torch.empty((0,), dtype=torch.int64)).cpu().numpy()
-
-    # draw
     draw = ImageDraw.Draw(img_rgb)
     try:
         font = ImageFont.load_default()
-    except Exception:
+    except Exception:  # fallback if system font missing
         font = None
 
+    detections = []
+
     for box, score, label in zip(boxes, scores, labels):
-        if float(score) >= float(score_threshold):
-            x_min, y_min, x_max, y_max = box
-            draw.rectangle([x_min, y_min, x_max, y_max], outline="red", width=2)
-            if font:
-                text = f"{int(label)}: {score:.2f}"
-                text_pos = (max(0, x_min), max(0, y_min - 10))
-                draw.text(text_pos, text, fill="red", font=font)
+        if float(score) < float(score_threshold):
+            continue
+        if int(label) != GUN_LABEL_ID:
+            continue
 
-    return img_rgb
+        x_min, y_min, x_max, y_max = box
+        draw.rectangle([x_min, y_min, x_max, y_max], outline="red", width=3)
+        label_text = f"{LABEL_MAP.get(int(label), f'class_{label}')} {score:.2f}"
+        if font:
+            draw.text((x_min + 4, max(0, y_min - 14)), label_text, fill="red", font=font)
 
+        detections.append(
+            {
+                "label": LABEL_MAP.get(int(label), f"class_{label}"),
+                "score": round(float(score), 3),
+                "box": [float(x_min), float(y_min), float(x_max), float(y_max)],
+            }
+        )
 
-@app.get("/")
+    return img_rgb, detections
+
+@app.get("/", response_class=HTMLResponse)
 def read_root():
-    return {"message": "Welcome to the Object Detection API"}
-
+    with open("static/index.html", "r") as f:
+        html_content = f.read()
+    return HTMLResponse(content=html_content)
 
 @app.post("/predict/")
-async def predict(file: UploadFile = File(...)):
-    # read bytes and open PIL image
+async def predict(file: UploadFile = File(...), score_threshold: float = 0.5):
     try:
         image_data = await file.read()
         image = Image.open(io.BytesIO(image_data))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid image: {exc}") from exc
 
-    # run inference and draw
+    output_image, detections = predict_and_draw(image, score_threshold=score_threshold)
+    img_byte_arr = io.BytesIO()
+    output_image.save(img_byte_arr, format="PNG")
+    img_byte_arr.seek(0)
+
+    return StreamingResponse(
+        img_byte_arr,
+        media_type="image/png",
+        headers={"X-Detection-Count": str(len(detections))},
+    )
+
+@app.post("/predict/json/")
+async def predict_json(file: UploadFile = File(...), score_threshold: float = 0.5):
     try:
-        output_image = predict_and_draw(image, score_threshold=0.7)
-    except RuntimeError as e:
-        # model inference error
-        raise HTTPException(status_code=500, detail=str(e))
+        image_data = await file.read()
+        image = Image.open(io.BytesIO(image_data))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid image: {exc}") from exc
 
-    # return image as streaming response
-    img_byte_array = io.BytesIO()
-    output_image.save(img_byte_array, format="PNG")
-    img_byte_array.seek(0)
-    return StreamingResponse(img_byte_array, media_type="image/png")
+    output_image, detections = predict_and_draw(image, score_threshold=score_threshold)
+    img_byte_arr = io.BytesIO()
+    output_image.save(img_byte_arr, format="PNG")
+    img_base64 = base64.b64encode(img_byte_arr.getvalue()).decode("utf-8")
 
-
-            
-    
-    
+    return {
+        "count": len(detections),
+        "detections": detections,
+        "image": f"data:image/png;base64,{img_base64}",
+    }

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Gun Detection System</title>
+    <link rel="stylesheet" href="/static/css/styles.css" />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <!-- Background particles -->
+    <div class="particles-bg"></div>
+
+    <!-- Navigation -->
+    <nav class="navbar">
+      <div class="nav-container">
+        <div class="nav-brand">
+          <i class="fas fa-shield-alt"></i>
+          <span>Guard AI</span>
+        </div>
+        <div class="nav-links">
+          <a href="#home" class="nav-link active">Home</a>
+          <a href="#detection" class="nav-link">Detection</a>
+          <a href="#about" class="nav-link">About</a>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section id="home" class="hero">
+      <div class="hero-content">
+        <div class="hero-text">
+          <h1 class="hero-title">
+            <span class="gradient-text">AI-Powered</span><br />
+            Gun Detection System
+          </h1>
+          <p class="hero-subtitle">
+            Advanced machine learning technology for real-time weapon detection
+            and security monitoring
+          </p>
+          <div class="hero-stats">
+            <div class="stat">
+              <span class="stat-number">AI</span>
+              <span class="stat-label">Powered</span>
+            </div>
+            <div class="stat">
+              <span class="stat-number">Fast</span>
+              <span class="stat-label">Detection</span>
+            </div>
+            <div class="stat">
+              <span class="stat-number">Secure</span>
+              <span class="stat-label">Processing</span>
+            </div>
+          </div>
+          <button
+            class="cta-button"
+            onclick="document.getElementById('detection').scrollIntoView({behavior: 'smooth'})"
+          >
+            <i class="fas fa-rocket"></i>
+            Start Detection
+          </button>
+        </div>
+        <div class="hero-visual">
+          <div class="detection-preview">
+            <div class="preview-screen">
+              <div class="scan-line"></div>
+              <div class="detection-grid">
+                <div class="grid-dot"></div>
+                <div class="grid-dot"></div>
+                <div class="grid-dot"></div>
+                <div class="grid-dot"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Detection Section -->
+    <section id="detection" class="detection-section">
+      <div class="container">
+        <div class="section-header">
+          <h2 class="section-title">Upload & Detect</h2>
+          <p class="section-subtitle">
+            Upload an image to analyze for weapon detection using our advanced
+            AI model
+          </p>
+        </div>
+
+        <div class="upload-area" id="uploadArea">
+          <div class="upload-content">
+            <i class="fas fa-cloud-upload-alt upload-icon"></i>
+            <h3>Drop your image here</h3>
+            <p>or <span class="browse-text">browse files</span></p>
+            <input type="file" id="imageUpload" accept="image/*" hidden />
+            <div class="upload-info">
+              <small>Supports: JPG, PNG, JPEG • Max size: 10MB</small>
+            </div>
+          </div>
+          <div class="upload-preview" id="uploadPreview" style="display: none">
+            <img id="previewImage" alt="Preview" />
+            <div class="preview-overlay">
+              <button class="change-image-btn" id="changeImageBtn">
+                <i class="fas fa-edit"></i>
+                Change Image
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="action-buttons">
+          <button class="detect-btn" id="predictButton" disabled>
+            <i class="fas fa-search"></i>
+            <span>Analyze Image</span>
+            <div class="btn-loading" style="display: none">
+              <i class="fas fa-spinner fa-spin"></i>
+            </div>
+          </button>
+        </div>
+
+        <div
+          class="results-container"
+          id="resultsContainer"
+          style="display: none"
+        >
+          <div class="results-header">
+            <h3>Detection Results</h3>
+          </div>
+
+          <div class="image-comparison">
+            <div class="image-card">
+              <div class="card-header">
+                <h4><i class="fas fa-image"></i> Original Image</h4>
+              </div>
+              <div class="image-wrapper">
+                <img id="originalImage" alt="Original Image" />
+              </div>
+            </div>
+
+            <div class="comparison-arrow">
+              <i class="fas fa-arrow-right"></i>
+            </div>
+
+            <div class="image-card">
+              <div class="card-header">
+                <h4><i class="fas fa-crosshairs"></i> Detection Result</h4>
+              </div>
+              <div class="image-wrapper">
+                <img id="processedImage" alt="Processed Image" />
+              </div>
+            </div>
+          </div>
+
+          <div class="detection-info">
+            <div class="info-card">
+              <div class="card-header compact">
+                <h4><i class="fas fa-bullseye"></i> Detected Guns</h4>
+              </div>
+              <p class="info-value" id="detectedCount">0</p>
+              <p class="info-subtext">
+                Model counts guns above the chosen confidence threshold.
+              </p>
+            </div>
+            <div class="info-card">
+              <div class="card-header compact">
+                <h4><i class="fas fa-sliders-h"></i> Confidence Threshold</h4>
+              </div>
+              <div class="threshold-control">
+                <input
+                  type="range"
+                  id="thresholdInput"
+                  min="0.10"
+                  max="0.90"
+                  value="0.50"
+                  step="0.05"
+                />
+                <span id="thresholdLabel">0.50</span>
+              </div>
+              <p class="info-subtext">
+                Slide to trade-off between recall and precision.
+              </p>
+            </div>
+          </div>
+
+          <div class="detection-list">
+            <div class="card-header compact">
+              <h4><i class="fas fa-list-ul"></i> Detection Details</h4>
+            </div>
+            <ul id="detectionsList">
+              <li class="empty">Upload an image to view detection metadata.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="status-message" id="statusMessage"></div>
+      </div>
+    </section>
+
+    <!-- About Section -->
+    <section id="about" class="about-section">
+      <div class="container">
+        <div class="about-content">
+          <h2>Advanced AI Technology</h2>
+          <p>
+            Our system uses state-of-the-art Faster R-CNN deep learning models
+            trained on hundreds of images to provide accurate and reliable
+            weapon detection capabilities.
+          </p>
+          <div class="tech-features">
+            <div class="feature">
+              <i class="fas fa-brain"></i>
+              <h4>Deep Learning</h4>
+              <p>Advanced neural networks for precise object detection</p>
+            </div>
+            <div class="feature">
+              <i class="fas fa-tachometer-alt"></i>
+              <h4>Real-time Processing</h4>
+              <p>Lightning-fast analysis with sub-second response times</p>
+            </div>
+            <div class="feature">
+              <i class="fas fa-lock"></i>
+              <h4>Secure & Private</h4>
+              <p>Your data is processed securely and never stored</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="container">
+        <div class="footer-content">
+          <div class="footer-brand">
+            <i class="fas fa-shield-alt"></i>
+            <span>Guard AI</span>
+          </div>
+          <p>
+            &copy; 2025 AI Gun Detection Project. Enhancing security through
+            technology.
+          </p>
+        </div>
+      </div>
+    </footer>
+
+    <script src="/static/js/script.js"></script>
+  </body>
+</html>
