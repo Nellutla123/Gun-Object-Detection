@@ -15,9 +15,25 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Upgrade pip first
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install PyTorch and torchvision from PyTorch index (CPU version - smaller and faster for CI/CD)
+# This prevents downloading the full CUDA version which is much larger and can cause timeouts
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# Install other dependencies (exclude torch and torchvision as they're already installed)
+RUN pip install --no-cache-dir \
+    pandas \
+    numpy \
+    setuptools \
+    kagglehub \
+    opencv-python-headless \
+    tensorboard \
+    dvc \
+    "fastapi[all]" \
+    uvicorn \
+    pillow
 
 # Copy application code
 COPY . .
