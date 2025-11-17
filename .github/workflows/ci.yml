@@ -103,6 +103,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
+          # Build arguments for network configuration if needed
+          build-args: |
+            BUILDKIT_PROGRESS=plain
+          # Enable BuildKit for better error messages
+          pull: true
 
   deploy:
     name: Deploy Application
