@@ -132,7 +132,9 @@ document.addEventListener("DOMContentLoaded", () => {
     thresholdLabel.textContent = Number(thresholdInput.value).toFixed(2);
   });
 
-  // Prediction handling
+  // =========================
+  //   Prediction handling
+  // =========================
   predictButton.addEventListener("click", async () => {
     if (!currentFile) {
       showStatusMessage("Please upload an image first.", "error");
@@ -153,25 +155,27 @@ document.addEventListener("DOMContentLoaded", () => {
       : "0.50";
 
     try {
-      const response = await fetch(
-        `/predict/json/?score_threshold=${threshold}`,
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
+      // NOTE: backend only exposes /predict/ (no /predict/json/)
+      const response = await fetch(`/predict/?score_threshold=${threshold}`, {
+        method: "POST",
+        body: formData,
+      });
 
       if (response.ok) {
-        const data = await response.json();
-        if (data.image) {
-          processedImage.src = data.image;
-        }
-        updateDetections(data);
+        // Backend returns the processed IMAGE (bytes) -> read as blob
+        const blob = await response.blob();
+        const imageUrl = URL.createObjectURL(blob);
+        processedImage.src = imageUrl;
+
+        // No JSON metadata from backend – show simple info
+        detectedCount.textContent = "—";
+        detectionsList.innerHTML =
+          '<li class="empty">Detection metadata is not available. The processed image above shows the detected guns.</li>';
 
         // Show results
         showResults();
         showStatusMessage(
-          "Analysis complete! Results displayed above.",
+          "Analysis complete! Processed image displayed above.",
           "success"
         );
 
@@ -185,8 +189,13 @@ document.addEventListener("DOMContentLoaded", () => {
       } else {
         let errorMessage = "An error occurred during analysis.";
         try {
-          const errorData = await response.json();
-          errorMessage = errorData.detail || errorMessage;
+          // Try to read response text for more detail
+          const errorText = await response.text();
+          if (errorText) {
+            errorMessage = `Error: ${response.status} ${response.statusText} - ${errorText}`;
+          } else {
+            errorMessage = `Error: ${response.status} ${response.statusText}`;
+          }
         } catch (e) {
           errorMessage = `Error: ${response.status} ${response.statusText}`;
         }
