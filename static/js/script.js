@@ -10,10 +10,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const processedImage = document.getElementById("processedImage");
   const statusMessage = document.getElementById("statusMessage");
   const resultsContainer = document.getElementById("resultsContainer");
-  const thresholdInput = document.getElementById("thresholdInput");
-  const thresholdLabel = document.getElementById("thresholdLabel");
-  const detectedCount = document.getElementById("detectedCount");
-  const detectionsList = document.getElementById("detectionsList");
 
   let currentFile = null;
 
@@ -106,7 +102,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     currentFile = file;
-    resetDetections();
 
     // Show preview
     const reader = new FileReader();
@@ -128,13 +123,7 @@ document.addEventListener("DOMContentLoaded", () => {
     reader.readAsDataURL(file);
   }
 
-  thresholdInput?.addEventListener("input", () => {
-    thresholdLabel.textContent = Number(thresholdInput.value).toFixed(2);
-  });
-
-  // =========================
-  //   Prediction handling
-  // =========================
+  // Prediction handling
   predictButton.addEventListener("click", async () => {
     if (!currentFile) {
       showStatusMessage("Please upload an image first.", "error");
@@ -150,32 +139,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const formData = new FormData();
     formData.append("file", currentFile);
-    const threshold = thresholdInput
-      ? Number(thresholdInput.value).toFixed(2)
-      : "0.50";
 
     try {
-      // NOTE: backend only exposes /predict/ (no /predict/json/)
-      const response = await fetch(`/predict/?score_threshold=${threshold}`, {
+      const response = await fetch("/predict/", {
         method: "POST",
         body: formData,
       });
 
       if (response.ok) {
-        // Backend returns the processed IMAGE (bytes) -> read as blob
-        const blob = await response.blob();
-        const imageUrl = URL.createObjectURL(blob);
-        processedImage.src = imageUrl;
-
-        // No JSON metadata from backend – show simple info
-        detectedCount.textContent = "—";
-        detectionsList.innerHTML =
-          '<li class="empty">Detection metadata is not available. The processed image above shows the detected guns.</li>';
+        const imageBlob = await response.blob();
+        processedImage.src = URL.createObjectURL(imageBlob);
 
         // Show results
         showResults();
         showStatusMessage(
-          "Analysis complete! Processed image displayed above.",
+          "Analysis complete! Results displayed above.",
           "success"
         );
 
@@ -189,22 +167,15 @@ document.addEventListener("DOMContentLoaded", () => {
       } else {
         let errorMessage = "An error occurred during analysis.";
         try {
-          // Try to read response text for more detail
-          const errorText = await response.text();
-          if (errorText) {
-            errorMessage = `Error: ${response.status} ${response.statusText} - ${errorText}`;
-          } else {
-            errorMessage = `Error: ${response.status} ${response.statusText}`;
-          }
+          const errorData = await response.json();
+          errorMessage = errorData.detail || errorMessage;
         } catch (e) {
           errorMessage = `Error: ${response.status} ${response.statusText}`;
         }
-        resetDetections();
         showStatusMessage(errorMessage, "error");
       }
     } catch (error) {
       console.error("Error during prediction:", error);
-      resetDetections();
       showStatusMessage(
         "Network error occurred. Please check your connection and try again.",
         "error"
@@ -216,51 +187,6 @@ document.addEventListener("DOMContentLoaded", () => {
       predictButton.querySelector(".btn-loading").style.display = "none";
     }
   });
-
-  function updateDetections(data) {
-    const count = data?.count ?? 0;
-    detectedCount.textContent = count;
-
-    const items = Array.isArray(data?.detections) ? data.detections : [];
-    detectionsList.innerHTML = "";
-
-    if (!items.length) {
-      const li = document.createElement("li");
-      li.className = "empty";
-      li.textContent =
-        count === 0 ? "No guns detected." : "Detection data unavailable.";
-      detectionsList.appendChild(li);
-      return;
-    }
-
-    items.forEach((det, index) => {
-      const li = document.createElement("li");
-      const labelSpan = document.createElement("span");
-      labelSpan.textContent = `${det.label || "Gun"} • ${
-        Math.round((det.score ?? 0) * 100) / 100
-      }`;
-
-      const boxSpan = document.createElement("span");
-      boxSpan.className = "box";
-      if (Array.isArray(det.box)) {
-        const [x1, y1, x2, y2] = det.box.map((n) => Math.round(n));
-        boxSpan.textContent = `#${index + 1} [${x1}, ${y1}, ${x2}, ${y2}]`;
-      } else {
-        boxSpan.textContent = `#${index + 1}`;
-      }
-
-      li.appendChild(labelSpan);
-      li.appendChild(boxSpan);
-      detectionsList.appendChild(li);
-    });
-  }
-
-  function resetDetections() {
-    detectedCount.textContent = "0";
-    detectionsList.innerHTML =
-      '<li class="empty">Upload an image to view detection metadata.</li>';
-    processedImage.src = "";
-  }
 
   function showResults() {
     // Show results container
